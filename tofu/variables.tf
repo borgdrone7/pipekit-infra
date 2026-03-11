@@ -22,3 +22,10 @@ variable "postgres_port" {
   type        = number
   default     = 5432
 }
+
+variable "postgrest_user_password" {
+  description = "Password for the postgrest superuser role"
+  type        = string
+  default     = "postgrest_password"
+  sensitive   = true
+}

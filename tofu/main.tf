@@ -40,7 +40,19 @@ resource "docker_container" "postgres" {
     container_path = "/var/lib/postgresql/data"
   }
 
-  restart = "unless-stopped"
+  healthcheck {
+    test     = ["CMD-SHELL", "pg_isready -U postgres"]
+    interval = "2s"
+    timeout  = "5s"
+    retries  = 15
+  }
+
+  # wait = true makes OpenTofu block until the healthcheck passes before
+  # marking this resource as created — so postgresql_database and
+  # postgresql_role never attempt to connect before Postgres is ready
+  wait         = true
+  wait_timeout = 60
+  restart      = "unless-stopped"
 }
 
 resource "docker_volume" "postgres_data" {
@@ -58,4 +70,12 @@ provider "postgresql" {
 resource "postgresql_database" "postgrest" {
   name       = "postgrest"
   depends_on = [docker_container.postgres]
+}
+
+resource "postgresql_role" "postgrest_user" {
+  name            = "postgrest_user"
+  login           = true
+  superuser       = true
+  password        = var.postgrest_user_password
+  depends_on      = [postgresql_database.postgrest]
 }
