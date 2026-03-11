@@ -182,3 +182,49 @@ The OpenTofu `postgresql` provider uses `localhost` because it runs on your mach
 ### Why `.terraform.lock.hcl` was fixed in .gitignore
 
 The original `.gitignore` excluded `.terraform.lock.hcl`. This was incorrect — the lock file records the exact provider versions downloaded and must be committed so all contributors get identical versions on `tofu init`. Without it, someone on a different machine might get a different provider version and hit unexpected behaviour.
+
+---
+
+## Step 3 — Deploy PostgREST via ArgoCD
+
+### What this step does
+
+Creates the PostgREST manifests in `postgrest/` and an ArgoCD Application in `argocd/postgrest-app.yaml`. ArgoCD pulls the manifests from GitHub and deploys them automatically.
+
+### Important: push before applying
+
+ArgoCD pulls manifests from Git, not from your local machine. Push first, then apply the Application — otherwise ArgoCD cannot find the manifests.
+
+```bash
+git add postgrest/ argocd/postgrest-app.yaml
+git push
+kubectl apply -f argocd/postgrest-app.yaml
+```
+
+Verify ArgoCD synced and the pod is running:
+
+```bash
+kubectl get application postgrest -n argocd
+kubectl get pods,svc,ingress -n postgrest
+```
+
+Expected:
+
+```
+NAME        SYNC STATUS   HEALTH STATUS
+postgrest   Synced        Healthy
+
+NAME                        READY   STATUS
+pod/postgrest-xxx           1/1     Running
+
+NAME                                  CLASS     HOSTS   ADDRESS
+ingress.networking.k8s.io/postgrest   traefik   *       172.x.x.x
+```
+
+Verify the endpoint:
+
+```bash
+curl http://localhost:8080
+```
+
+Should return a JSON OpenAPI spec. No tables appear yet — that is expected. Data is injected in the next step.
