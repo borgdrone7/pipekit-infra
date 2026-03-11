@@ -132,6 +132,53 @@ Expected: 7 pods all in `Running` state.
 
 ---
 
-## Step 2 — coming next
+---
 
-Injecting the `postgrest_user` credentials as a Kubernetes Secret into the `postgrest` namespace via OpenTofu.
+## Step 2 — OpenTofu: postgrest namespace and Kubernetes Secret
+
+### What this step does
+
+Adds the `kubernetes` provider to OpenTofu and creates two resources in the k3d cluster:
+- A `postgrest` namespace
+- A `postgrest-secret` Secret containing the Postgres connection string for PostgREST
+
+### How to run
+
+This step is part of the same `tofu apply` as step 1. After adding the kubernetes provider, run:
+
+```bash
+cd tofu
+tofu init   # needed once to download the new kubernetes provider
+tofu apply
+```
+
+Expected output includes:
+
+```
+kubernetes_namespace.postgrest: Creation complete
+kubernetes_secret.postgrest: Creation complete
+```
+
+### Verify the secret
+
+```bash
+kubectl get secret postgrest-secret -n postgrest -o jsonpath='{.data.db-uri}' | base64 -d
+```
+
+Expected output:
+
+```
+postgresql://postgrest_user:postgrest_password@host.k3d.internal:5432/postgrest
+```
+
+### Why `host.k3d.internal` and not `localhost`?
+
+PostgREST runs as a pod inside the k3d cluster. Postgres runs as a Docker container on the host machine, outside the cluster.
+
+Inside a pod, `localhost` refers to the pod itself — not your machine. `host.k3d.internal` is a hostname k3d automatically injects into every pod's `/etc/hosts` file. It resolves to the host machine's IP inside the Docker network. This is the bridge between the two.
+
+The OpenTofu `postgresql` provider uses `localhost` because it runs on your machine and the Postgres port is mapped to your machine. Two different network contexts, two different addresses for the same Postgres container.
+
+### Why `.terraform.lock.hcl` was fixed in .gitignore
+
+The original `.gitignore` excluded `.terraform.lock.hcl`. This was incorrect — the lock file records the exact provider versions downloaded and must be committed so all contributors get identical versions on `tofu init`. Without it, someone on a different machine might get a different provider version and hit unexpected behaviour.
