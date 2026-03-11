@@ -1,0 +1,40 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: seed-data
+  namespace: postgrest
+spec:
+  # if the job fails, retry once before giving up
+  backoffLimit: 1
+  template:
+    spec:
+      # Never = do not restart the container after it exits (success or failure)
+      # this is required on all Job pods
+      restartPolicy: Never
+      containers:
+        - name: seed
+          image: postgres:16-alpine  # same image as the DB — includes psql
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              psql $DB_URI -c "
+                CREATE TABLE IF NOT EXISTS employees (
+                  id         SERIAL PRIMARY KEY,
+                  name       TEXT NOT NULL,
+                  role       TEXT NOT NULL,
+                  department TEXT NOT NULL
+                );
+
+                INSERT INTO employees (name, role, department) VALUES
+                  ('Alice Johnson', 'Senior Engineer',  'Platform'),
+                  ('Bob Smith',     'DevOps Engineer',  'Infrastructure'),
+                  ('Carol White',   'Product Manager',  'Product'),
+                  ('Dan Lee',       'Security Engineer','Security')
+                ON CONFLICT DO NOTHING;
+              "
+          env:
+            - name: DB_URI
+              valueFrom:
+                secretKeyRef:
+                  name: postgrest-secret  # reuse the same secret PostgREST uses
+                  key: db-uri
