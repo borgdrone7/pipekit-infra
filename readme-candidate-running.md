@@ -63,7 +63,15 @@ This is a very common problem with any tool that provisions a database container
 
 ### Why `depends_on` alone does not solve it
 
-`depends_on = [docker_container.postgres]` tells OpenTofu to wait until the container *resource* is created. But "container created" in Docker terms means the container process started — not that the application inside it is ready. The gap between Docker saying "container is running" and Postgres saying "I am ready to accept connections" can be several seconds.
+`depends_on = [docker_container.postgres]` tells OpenTofu to wait until the container *resource* is created. But there are three different stages inside a container that must not be confused:
+
+| Stage | What it means |
+|---|---|
+| 1. Container started | Docker process is running — the OS inside the container is up |
+| 2. Postgres process started | The `postgres` binary launched and is initialising the data directory |
+| 3. Postgres ready | Data directory initialised, server is listening and accepting connections |
+
+`depends_on` only guarantees stage 1. The gap between stage 1 and stage 3 can be several seconds — long enough for OpenTofu to attempt a connection and fail.
 
 ### The fix: healthcheck + `wait = true`
 
@@ -86,6 +94,41 @@ wait_timeout = 60
 - With this in place, `postgresql_database` and `postgresql_role` never attempt to connect until Postgres is genuinely ready.
 
 The result is a clean single-run `tofu apply` with no manual retries needed.
+
+---
+
+---
+
+## ArgoCD installation
+
+This is part of the original starting point — install ArgoCD into the cluster after `tofu apply`.
+
+### What this step does
+
+Applies all ArgoCD Kubernetes objects (Deployments, Services, RBAC, CRDs, ConfigMaps, Secrets, NetworkPolicies) into the `argocd` namespace using Kustomize. The `kustomization.yaml` pulls the official ArgoCD install manifest directly from GitHub and applies it.
+
+### How to run
+
+```bash
+kubectl create namespace argocd
+kubectl apply --server-side -k argocd/argocd/
+```
+
+The `--server-side` flag is required here because ArgoCD's install manifest contains large objects (CRDs) that exceed the size limit of the default client-side apply. Server-side apply pushes the computation to the cluster instead of the local kubectl client.
+
+Wait for ArgoCD to be fully ready:
+
+```bash
+kubectl wait --for=condition=available deployment/argocd-server -n argocd --timeout=120s
+```
+
+Verify all pods are running:
+
+```bash
+kubectl get pods -n argocd
+```
+
+Expected: 7 pods all in `Running` state.
 
 ---
 
