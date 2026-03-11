@@ -38,7 +38,7 @@ cd ..
 # 3. ArgoCD
 kubectl create namespace argocd
 kubectl apply --server-side -k argocd/argocd/
-kubectl wait --for=condition=available deployment/argocd-server -n argocd --timeout=120s
+kubectl wait --for=condition=available deployment --all -n argocd --timeout=120s
 
 # 4. PostgREST
 kubectl apply -f argocd/postgrest-app.yaml
