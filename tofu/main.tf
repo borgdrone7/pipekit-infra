@@ -78,6 +78,13 @@ resource "postgresql_role" "postgrest_user" {
   superuser  = true
   password   = var.postgrest_user_password
   depends_on = [postgresql_database.postgrest]
+
+  # skip_drop_role prevents OpenTofu from running DROP ROLE on destroy.
+  # The role owns objects created by the seed Job (e.g. the employees table).
+  # Dropping a role that owns objects fails unless all objects are reassigned first.
+  # Since the entire Postgres container is destroyed alongside this role,
+  # explicitly dropping it inside Postgres is unnecessary.
+  skip_drop_role = true
 }
 
 # k3d merges the cluster kubeconfig into ~/.kube/config automatically.

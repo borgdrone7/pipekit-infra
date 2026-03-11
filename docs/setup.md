@@ -19,7 +19,20 @@ Your Machine
 
 **Why is Postgres outside the cluster?**
 
-The cluster is stateless and can be destroyed and rebuilt at any time with `tofu destroy` + `tofu apply`. Postgres runs as a Docker container with its own Docker volume so data survives a full cluster rebuild. In production this would be replaced by a managed service (RDS, CloudSQL) or a database operator such as CloudNativePG running inside the cluster with a PersistentVolumeClaim backed by a cloud StorageClass. Either way, the principle is the same: the database lifecycle is independent from the cluster lifecycle.
+Postgres runs as a Docker container rather than inside Kubernetes. This is intentional — architecturally the database is independent from the cluster (different technology, different network, different lifecycle concern). In production this would be a managed service (RDS, CloudSQL) or a database operator like CloudNativePG with a PersistentVolumeClaim backed by a cloud StorageClass. Either way, the principle is the same: the database lifecycle should be independent from the cluster lifecycle.
+
+**Note on `tofu destroy` in this setup:**
+
+Because the task provides a single `tofu` directory managing both the cluster and Postgres, running `tofu destroy` destroys everything — including the Postgres container and its data volume. This means DB data does not survive a full destroy in this setup.
+
+In a real production system you would split these into two separate OpenTofu states:
+
+```
+tofu/database/   ← manages only Postgres — destroy independently
+tofu/cluster/    ← manages only the k3d cluster — can be wiped freely
+```
+
+This would give true lifecycle independence. For this task a single tofu state is used because the task specifies one `tofu` directory for both, keeping things simple and reproducible in one command.
 
 ---
 
@@ -116,7 +129,7 @@ brew install git
 ### 1. Clone the repository
 
 ```bash
-git clone git@github.com:borgdrone7/pipekit-infra.git
+git clone https://github.com/borgdrone7/pipekit-infra.git
 cd pipekit-infra
 ```
 
@@ -140,14 +153,9 @@ Type `yes` when prompted. This will:
 ### 3. Install ArgoCD
 
 ```bash
-cd ../argocd
+cd ..
 kubectl create namespace argocd
-kubectl apply --server-side -k argocd/
-```
-
-Wait for ArgoCD to be ready:
-
-```bash
+kubectl apply --server-side -k argocd/argocd/
 kubectl wait --for=condition=available deployment/argocd-server -n argocd --timeout=120s
 ```
 
@@ -157,7 +165,7 @@ kubectl wait --for=condition=available deployment/argocd-server -n argocd --time
 kubectl apply -f argocd/postgrest-app.yaml
 ```
 
-Watch the sync:
+Watch until the pod is running:
 
 ```bash
 kubectl get pods -n postgrest -w
@@ -165,13 +173,11 @@ kubectl get pods -n postgrest -w
 
 ### 5. Verify the endpoint
 
-Once pods are running, visit:
-
-```
-http://localhost:8080
+```bash
+curl http://localhost:8080/employees
 ```
 
-You should see the PostgREST JSON response with the data injected by the Job.
+You should see JSON with the seeded employee data.
 
 ---
 
@@ -182,10 +188,10 @@ cd tofu
 tofu destroy
 ```
 
-Removes the k3d cluster, the Postgres container, and its data volume. Re-run `tofu apply` to start fresh.
+Removes everything managed by OpenTofu: the k3d cluster, the Postgres container, and its data volume. All database data is lost. Re-run `tofu apply` to start completely fresh — the seed Job will recreate the table and data automatically via ArgoCD.
 
 ---
 
 ## Expected Result
 
-<!-- Screenshot will be added after final step -->
+![PostgREST employees endpoint showing injected data](screenshot.png)

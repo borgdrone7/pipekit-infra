@@ -288,3 +288,29 @@ ArgoCD syncs by running the equivalent of `kubectl apply` on every manifest. `ku
 When ArgoCD applies `job-seed.yaml` and the Job already exists in `Completed` state, Kubernetes sees nothing has changed and does nothing. The Job is not deleted, not recreated, not re-triggered.
 
 The only way a completed Job runs again is if it gets deleted. We deliberately avoid `ttlSecondsAfterFinished` on the Job for this reason — that field auto-deletes the Job after N seconds, which would cause ArgoCD to recreate it (and re-run it) on every sync.
+
+
+---
+
+## Problem hit: `tofu destroy` fails — role cannot be dropped
+
+### What happened
+
+On destroy, OpenTofu failed with:
+
+```
+Error: could not delete role postgrest_user:
+pq: role "postgrest_user" cannot be dropped because some objects depend on it
+```
+
+The seed Job created the `employees` table while connected as `postgrest_user`, so that role owns the table. PostgreSQL refuses to drop a role that owns objects unless those objects are reassigned or dropped first.
+
+### The fix: `skip_drop_role = true`
+
+Added to `postgresql_role.postgrest_user`:
+
+```hcl
+skip_drop_role = true
+```
+
+This tells OpenTofu not to run `DROP ROLE` on destroy. Since the entire Postgres Docker container is destroyed at the same time, explicitly dropping the role inside it is redundant — the container and all its data are gone regardless.
