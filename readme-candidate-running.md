@@ -283,4 +283,8 @@ Expected:
 
 ### Why a completed Job is not re-run by ArgoCD
 
-A Kubernetes Job in `Completed` state is not re-triggered by `kubectl apply`. Applying the same Job manifest again is a no-op — Kubernetes sees it already exists and ignores it. ArgoCD auto-sync therefore does not cause the Job to run again on every sync cycle.
+ArgoCD syncs by running the equivalent of `kubectl apply` on every manifest. `kubectl apply` is declarative — it means "make the cluster match this definition", not "run this again."
+
+When ArgoCD applies `job-seed.yaml` and the Job already exists in `Completed` state, Kubernetes sees nothing has changed and does nothing. The Job is not deleted, not recreated, not re-triggered.
+
+The only way a completed Job runs again is if it gets deleted. We deliberately avoid `ttlSecondsAfterFinished` on the Job for this reason — that field auto-deletes the Job after N seconds, which would cause ArgoCD to recreate it (and re-run it) on every sync.
