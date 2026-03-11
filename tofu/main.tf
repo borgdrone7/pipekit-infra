@@ -73,9 +73,39 @@ resource "postgresql_database" "postgrest" {
 }
 
 resource "postgresql_role" "postgrest_user" {
-  name            = "postgrest_user"
-  login           = true
-  superuser       = true
-  password        = var.postgrest_user_password
-  depends_on      = [postgresql_database.postgrest]
+  name       = "postgrest_user"
+  login      = true
+  superuser  = true
+  password   = var.postgrest_user_password
+  depends_on = [postgresql_database.postgrest]
+}
+
+# k3d merges the cluster kubeconfig into ~/.kube/config automatically.
+# config_context pins the provider to this specific cluster so it does not
+# accidentally talk to a different cluster if multiple contexts exist.
+provider "kubernetes" {
+  config_path    = "~/.kube/config"
+  config_context = "k3d-${var.k3d_cluster_name}"
+}
+
+resource "kubernetes_namespace" "postgrest" {
+  metadata {
+    name = "postgrest"
+  }
+
+  depends_on = [terraform_data.k3d_cluster]
+}
+
+resource "kubernetes_secret" "postgrest" {
+  metadata {
+    name      = "postgrest-secret"
+    namespace = kubernetes_namespace.postgrest.metadata[0].name
+  }
+
+  # host.k3d.internal is a hostname k3d injects into every pod's /etc/hosts.
+  # It resolves to the host machine IP so pods can reach services running
+  # outside the cluster — in this case the Postgres Docker container.
+  data = {
+    db-uri = "postgresql://postgrest_user:${var.postgrest_user_password}@host.k3d.internal:${var.postgres_port}/postgrest"
+  }
 }
