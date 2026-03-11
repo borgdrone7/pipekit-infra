@@ -228,3 +228,59 @@ curl http://localhost:8080
 ```
 
 Should return a JSON OpenAPI spec. No tables appear yet — that is expected. Data is injected in the next step.
+
+---
+
+## Step 4 — Kubernetes Job: seed data
+
+### What this step does
+
+A Job runs a `postgres:16-alpine` pod once to completion. It connects to Postgres via the same Secret PostgREST uses, creates an `employees` table, and inserts four rows. The SQL uses `IF NOT EXISTS` and `ON CONFLICT DO NOTHING` so the Job is safe to run multiple times without duplicating data.
+
+### How to run
+
+The Job is in `postgrest/job-seed.yaml` and listed in `kustomization.yaml` — ArgoCD deploys it automatically on sync. No manual step needed beyond pushing the file.
+
+Force an immediate sync if needed:
+
+```bash
+kubectl annotate application postgrest -n argocd argocd.argoproj.io/refresh="normal" --overwrite
+```
+
+Verify the Job completed:
+
+```bash
+kubectl get jobs,pods -n postgrest
+```
+
+Expected:
+
+```
+NAME                  STATUS     COMPLETIONS   DURATION
+job.batch/seed-data   Complete   1/1           16s
+
+NAME                        READY   STATUS
+pod/postgrest-xxx           1/1     Running
+pod/seed-data-xxx           0/1     Completed
+```
+
+Verify the data via PostgREST:
+
+```bash
+curl http://localhost:8080/employees
+```
+
+Expected:
+
+```json
+[
+  {"id":1,"name":"Alice Johnson","role":"Senior Engineer","department":"Platform"},
+  {"id":2,"name":"Bob Smith","role":"DevOps Engineer","department":"Infrastructure"},
+  {"id":3,"name":"Carol White","role":"Product Manager","department":"Product"},
+  {"id":4,"name":"Dan Lee","role":"Security Engineer","department":"Security"}
+]
+```
+
+### Why a completed Job is not re-run by ArgoCD
+
+A Kubernetes Job in `Completed` state is not re-triggered by `kubectl apply`. Applying the same Job manifest again is a no-op — Kubernetes sees it already exists and ignores it. ArgoCD auto-sync therefore does not cause the Job to run again on every sync cycle.
