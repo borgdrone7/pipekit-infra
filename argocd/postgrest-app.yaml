@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgrest
+  namespace: argocd  # the Application object itself lives in argocd namespace
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/borgdrone7/pipekit-infra
+    targetRevision: HEAD       # always track the latest commit on the default branch
+    path: postgrest            # watch this folder for manifests
+  destination:
+    server: https://kubernetes.default.svc  # this cluster
+    namespace: postgrest       # deploy manifests into this namespace
+  syncPolicy:
+    automated:
+      prune: true      # delete resources from cluster if removed from git
+      selfHeal: true   # re-apply if someone manually changes something in the cluster

@@ -1,0 +1,17 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: postgrest
+  namespace: postgrest
+spec:
+  ingressClassName: traefik  # k3d ships with Traefik as the built-in ingress controller
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: postgrest
+                port:
+                  number: 3000
