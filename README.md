@@ -54,6 +54,20 @@ Use a kubernetes job to inject some data into the postgres database
 
 Update this file, README.md, with a screenshot of what we should see when we visit the URL after following your instructions - this should show us the data you have injected.
 
+## Setup
+
+Full instructions are in [`docs/setup.md`](docs/setup.md). Quick reference in [`docs/running-short.md`](docs/running-short.md).
+
+Two things worth noting:
+
+**ArgoCD wait** — wait for all deployments, not just `argocd-server`:
+```bash
+kubectl wait --for=condition=available deployment --all -n argocd --timeout=120s
+```
+ArgoCD uses a separate `argocd-repo-server` to clone git repos and read manifests. If you only wait for `argocd-server` (which starts faster), the first sync attempt fails because the repo-server isn't ready yet — then ArgoCD waits ~3 minutes before retrying.
+
+**OpenTofu** — the kubernetes provider was replaced with `terraform_data` + `local-exec` kubectl. The kubernetes provider validates the kubeconfig context at init time, before the cluster exists, which causes `tofu apply` to fail on a fresh machine. Using kubectl inside `local-exec` avoids this — it only runs during apply, after the cluster is created.
+
 ## Expected Result
 
 Visit `http://localhost:8080/employees` after running the setup instructions.
