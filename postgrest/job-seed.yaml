@@ -4,7 +4,6 @@ metadata:
   name: seed-data
   namespace: postgrest
 spec:
-  # if the job fails, retry once before giving up
   backoffLimit: 1
   template:
     spec:
@@ -17,6 +16,13 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
+              # Wait for Postgres to accept connections before seeding.
+              # CoreDNS may not have fully propagated host.k3d.internal when
+              # ArgoCD first deploys this Job — retrying avoids a false failure.
+              until psql $DB_URI -c "SELECT 1" > /dev/null 2>&1; do
+                echo "Waiting for Postgres..."; sleep 2
+              done
+
               psql $DB_URI -c "
                 CREATE TABLE IF NOT EXISTS employees (
                   id         SERIAL PRIMARY KEY,

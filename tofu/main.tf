@@ -87,32 +87,42 @@ resource "postgresql_role" "postgrest_user" {
   skip_drop_role = true
 }
 
-# k3d merges the cluster kubeconfig into ~/.kube/config automatically.
-# config_context pins the provider to this specific cluster so it does not
-# accidentally talk to a different cluster if multiple contexts exist.
-provider "kubernetes" {
-  config_path    = "~/.kube/config"
-  config_context = "k3d-${var.k3d_cluster_name}"
-}
+# Using kubectl via local-exec instead of the kubernetes provider.
+# The kubernetes provider validates the kubeconfig context at initialization
+# time — before any resources run — which causes it to fail on a fresh machine
+# where the k3d cluster does not exist yet. kubectl runs during apply, after
+# the cluster is created, so this ordering problem does not exist.
+# To keep the kubernetes provider, you would need to run:
+#   tofu apply -target=terraform_data.k3d_cluster   (create cluster first)
+#   tofu apply                                       (then apply the rest)
+# In production this is solved by splitting into separate tofu states
+# (tofu/cluster/ then tofu/kubernetes/) so the provider only initialises
+# after the cluster already exists.
 
-resource "kubernetes_namespace" "postgrest" {
-  metadata {
-    name = "postgrest"
-  }
-
+resource "terraform_data" "postgrest_namespace" {
   depends_on = [terraform_data.k3d_cluster]
+
+  provisioner "local-exec" {
+    command = "kubectl create namespace postgrest --context k3d-${var.k3d_cluster_name} --dry-run=client -o yaml | kubectl apply --context k3d-${var.k3d_cluster_name} -f -"
+  }
 }
 
-resource "kubernetes_secret" "postgrest" {
-  metadata {
-    name      = "postgrest-secret"
-    namespace = kubernetes_namespace.postgrest.metadata[0].name
+resource "terraform_data" "postgrest_secret" {
+  # triggers_replace re-runs the provisioner if the connection string changes
+  # (e.g. password or port variable is updated)
+  triggers_replace = {
+    db_uri = "postgresql://postgrest_user:${var.postgrest_user_password}@host.k3d.internal:${var.postgres_port}/postgrest"
   }
 
-  # host.k3d.internal is a hostname k3d injects into every pod's /etc/hosts.
-  # It resolves to the host machine IP so pods can reach services running
-  # outside the cluster — in this case the Postgres Docker container.
-  data = {
-    db-uri = "postgresql://postgrest_user:${var.postgrest_user_password}@host.k3d.internal:${var.postgres_port}/postgrest"
+  depends_on = [terraform_data.postgrest_namespace]
+
+  provisioner "local-exec" {
+    # Pass the URI via env var so it does not appear in shell history
+    environment = {
+      DB_URI = "postgresql://postgrest_user:${var.postgrest_user_password}@host.k3d.internal:${var.postgres_port}/postgrest"
+    }
+    # --dry-run=client -o yaml | kubectl apply makes this idempotent —
+    # safe to run even if the secret already exists
+    command = "kubectl create secret generic postgrest-secret --namespace postgrest --context k3d-${var.k3d_cluster_name} --from-literal=db-uri=$DB_URI --dry-run=client -o yaml | kubectl apply --context k3d-${var.k3d_cluster_name} -f -"
   }
 }
